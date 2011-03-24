@@ -92,138 +92,7 @@ int loop_fd = -1;		/* Loop device */
 void __attribute__ ((noreturn)) die(const char *msg)
 {
     fprintf(stderr, "%s: %s\n", program, msg);
-
-#if DO_DIRECT_MOUNT
-    if (loop_fd != -1) {
-	ioctl(loop_fd, LOOP_CLR_FD, 0);	/* Free loop device */
-	close(loop_fd);
-	loop_fd = -1;
-    }
-#endif
-
-    if (mntpath)
-	unlink(mntpath);
-
     exit(1);
-}
-
-/*
- * Mount routine
- */
-int do_mount(int dev_fd, int *cookie, const char *mntpath, const char *fstype)
-{
-    struct stat st;
-
-    (void)cookie;
-
-    if (fstat(dev_fd, &st) < 0)
-	return errno;
-
-#if DO_DIRECT_MOUNT
-    {
-	if (!S_ISBLK(st.st_mode)) {
-	    /* It's file, need to mount it loopback */
-	    unsigned int n = 0;
-	    struct loop_info64 loopinfo;
-	    int loop_fd;
-
-	    for (n = 0; loop_fd < 0; n++) {
-		snprintf(devfdname, sizeof devfdname, "/dev/loop%u", n);
-		loop_fd = open(devfdname, O_RDWR);
-		if (loop_fd < 0 && errno == ENOENT) {
-		    die("no available loopback device!");
-		}
-		if (ioctl(loop_fd, LOOP_SET_FD, (void *)dev_fd)) {
-		    close(loop_fd);
-		    loop_fd = -1;
-		    if (errno != EBUSY)
-			die("cannot set up loopback device");
-		    else
-			continue;
-		}
-
-		if (ioctl(loop_fd, LOOP_GET_STATUS64, &loopinfo) ||
-		    (loopinfo.lo_offset = opt.offset,
-		     ioctl(loop_fd, LOOP_SET_STATUS64, &loopinfo)))
-		    die("cannot set up loopback device");
-	    }
-
-	    *cookie = loop_fd;
-	} else {
-	    snprintf(devfdname, sizeof devfdname, "/proc/%lu/fd/%d",
-		     (unsigned long)mypid, dev_fd);
-	    *cookie = -1;
-	}
-
-	return mount(devfdname, mntpath, fstype,
-		     MS_NOEXEC | MS_NOSUID, "umask=077,quiet");
-    }
-#else
-    {
-	char devfdname[128], mnt_opts[128];
-	pid_t f, w;
-	int status;
-
-	snprintf(devfdname, sizeof devfdname, "/proc/%lu/fd/%d",
-		 (unsigned long)mypid, dev_fd);
-
-	f = fork();
-	if (f < 0) {
-	    return -1;
-	} else if (f == 0) {
-	    if (!S_ISBLK(st.st_mode)) {
-		snprintf(mnt_opts, sizeof mnt_opts,
-			 "rw,nodev,noexec,loop,offset=%llu,umask=077,quiet",
-			 (unsigned long long)opt.offset);
-	    } else {
-		snprintf(mnt_opts, sizeof mnt_opts,
-			 "rw,nodev,noexec,umask=077,quiet");
-	    }
-	    execl(_PATH_MOUNT, _PATH_MOUNT, "-t", fstype, "-o", mnt_opts,
-		  devfdname, mntpath, NULL);
-	    _exit(255);		/* execl failed */
-	}
-
-	w = waitpid(f, &status, 0);
-	return (w != f || status) ? -1 : 0;
-    }
-#endif
-}
-
-/*
- * umount routine
- */
-void do_umount(const char *mntpath, int cookie)
-{
-#if DO_DIRECT_MOUNT
-    int loop_fd = cookie;
-
-    if (umount2(mntpath, 0))
-	die("could not umount path");
-
-    if (loop_fd != -1) {
-	ioctl(loop_fd, LOOP_CLR_FD, 0);	/* Free loop device */
-	close(loop_fd);
-	loop_fd = -1;
-    }
-#else
-    pid_t f = fork();
-    pid_t w;
-    int status;
-    (void)cookie;
-
-    if (f < 0) {
-	perror("fork");
-	exit(1);
-    } else if (f == 0) {
-	execl(_PATH_UMOUNT, _PATH_UMOUNT, mntpath, NULL);
-    }
-
-    w = waitpid(f, &status, 0);
-    if (w != f || status) {
-	exit(1);
-    }
-#endif
 }
 
 /*
@@ -323,26 +192,19 @@ int main(int argc, char *argv[])
      * First make sure we can open the device at all, and that we have
      * read/write permission.
      */
-    int devNameLen = strlen(opt.device);
-    if (devNameLen < 10) {
-     perror(opt.device);
-     exit(1);
+
+    if (geteuid()) {
+	die("This program needs root privilege");
     }
-    char rawDevPath[4096];
-    memset(rawDevPath, 0, 4096);
-    memcpy(rawDevPath, opt.device, 9);
-    if (strcmp(rawDevPath, "/dev/disk") != 0) {
-     perror("device name needs to start with /dev/disk");
-     exit(1);
-    }
-    memset(rawDevPath, 0, 4096);
-    strcat(rawDevPath, "/dev/rdisk");
-    strcat(rawDevPath, opt.device + 9);
-    printf(rawDevPath);
+    char umountCommand[4096];
+    memset(umountCommand, 0, 4096);
+    strcat(umountCommand, "diskutil umount ");
+    strcat(umountCommand, opt.device);
+    system(umountCommand);
     
-    dev_fd = open(rawDevPath, O_RDWR);
+    dev_fd = open(opt.device, O_RDWR);
     if (dev_fd < 0 || fstat(dev_fd, &st) < 0) {
-	perror(opt.device);
+	perror("couldn't open device");
 	exit(1);
     }
 
@@ -357,6 +219,7 @@ int main(int argc, char *argv[])
     fs_type = VFAT;
     xpread(dev_fd, sectbuf, SECTOR_SIZE, opt.offset);
     fsync(dev_fd);
+    close(dev_fd);
 
     /*
      * Check to see that what we got was indeed an MS-DOS boot sector/superblock
@@ -427,12 +290,13 @@ int main(int argc, char *argv[])
 
 #endif
 
-    char mountGrepCmd[4096];
-    memset(mountGrepCmd, 0, 4096);
-    strcat(mountGrepCmd, "diskutil mount ");
-    strcat(mountGrepCmd, opt.device);
-    system(mountGrepCmd);
+    char mountCmd[4096];
+    memset(mountCmd, 0, 4096);
+    strcat(mountCmd, "diskutil mount ");
+    strcat(mountCmd, opt.device);
+    system(mountCmd);
     
+    char mountGrepCmd[4096];
     memset(mountGrepCmd, 0, 4096);
     strcat(mountGrepCmd, "mount | grep ");
     strcat(mountGrepCmd, opt.device);
@@ -460,9 +324,9 @@ int main(int argc, char *argv[])
     if (opt.update_only == -1) {
 	if (opt.reset_adv || opt.set_once) {
 	    modify_existing_adv(ldlinux_path);
-	    do_umount(mntpath, mnt_cookie);
+	    //do_umount(mntpath, mnt_cookie);
 	    sync();
-	    rmdir(mntpath);
+	    //rmdir(mntpath);
 	    exit(0);
 	} else {
 	    fprintf(stderr, "%s: please specify --install or --update for the future\n", argv[0]);
@@ -551,6 +415,12 @@ int main(int argc, char *argv[])
     
     sectors = calloc(ldlinux_sectors, sizeof *sectors);
     //fs = libfat_open(libfat_readfile, (intptr_t) d_handle);
+    system(umountCommand);
+    dev_fd = open(opt.device, O_RDWR);
+    if (dev_fd < 0 || fstat(dev_fd, &st) < 0) {
+	perror("couldn't open device");
+	exit(1);
+    }
     fs = libfat_open(libfat_readfile, dev_fd);
     if (fs == NULL) printf("null fs struct\n");
     ldlinux_cluster = libfat_searchdir(fs, 0, "LDLINUX SYS", NULL);
@@ -570,12 +440,14 @@ int main(int argc, char *argv[])
     printf("checkpoint5\n");
 
 umount:
-    do_umount(mntpath, mnt_cookie);
+    //do_umount(mntpath, mnt_cookie);
     sync();
-    rmdir(mntpath);
+    //rmdir(mntpath);
 
     if (err)
 	exit(err);
+	
+	printf("checkpoint6\n");
 
     /*
      * Patch ldlinux.sys and the boot sector
@@ -591,6 +463,8 @@ umount:
 	xpwrite(dev_fd, boot_image + i * SECTOR_SIZE, SECTOR_SIZE,
 		opt.offset + ((off_t) sectors[i] << SECTOR_SHIFT));
     }
+    
+    printf("checkpoint7\n");
 
     /*
      * To finish up, write the boot sector
@@ -604,9 +478,12 @@ umount:
 
     /* Write new boot sector */
     xpwrite(dev_fd, sectbuf, SECTOR_SIZE, opt.offset);
+    
+    printf("checkpoint8\n");
 
     close(dev_fd);
     sync();
+    system(mountCmd);
 
     /* Done! */
 
