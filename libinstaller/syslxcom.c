@@ -28,9 +28,25 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/mount.h>
-#include <sys/vfs.h>
-#include "linuxioctl.h"
+
+#include <sys/param.h>
+//#include <sys/mount.h>
+#include <sys/statvfs.h>
+
+//#include "linuxioctl.h"
+
+#include <sys/ioctl.h>
+
+#ifndef FAT_IOCTL_GET_ATTRIBUTES
+# define FAT_IOCTL_GET_ATTRIBUTES	_IOR('r', 0x10, __u32)
+#endif
+
+#ifndef FAT_IOCTL_SET_ATTRIBUTES
+# define FAT_IOCTL_SET_ATTRIBUTES	_IOW('r', 0x11, __u32)
+#endif
+
+#define __u32 uint32_t
+
 #include "syslxcom.h"
 
 const char *program;
@@ -117,6 +133,7 @@ void clear_attributes(int fd)
 
     if (!fstat(fd, &st)) {
 	switch (fs_type) {
+	/*
 	case EXT2:
 	{
 	    int flags;
@@ -127,6 +144,7 @@ void clear_attributes(int fd)
 	    }
 	    break;
 	}
+	*/
 	case VFAT:
 	{
 	    uint32_t attr = 0x00; /* Clear all attributes */
@@ -147,6 +165,7 @@ void set_attributes(int fd)
     if (!fstat(fd, &st)) {
 	fchmod(fd, st.st_mode & (S_IRUSR | S_IRGRP | S_IROTH));
 	switch (fs_type) {
+	/*
 	case EXT2:
 	{
 	    int flags;
@@ -157,6 +176,7 @@ void set_attributes(int fd)
 	    }
 	    break;
 	}
+	*/
 	case VFAT:
 	{
 	    uint32_t attr = 0x07; /* Hidden+System+Readonly */
@@ -169,6 +189,7 @@ void set_attributes(int fd)
     }
 }
 
+#if 0
 /* New FIEMAP based mapping */
 static int sectmap_fie(int fd, sector_t *sectors, int nsectors)
 {
@@ -284,3 +305,4 @@ int sectmap(int fd, sector_t *sectors, int nsectors)
 
     return sectmap_fib(fd, sectors, nsectors);
 }
+#endif

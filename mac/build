@@ -1,0 +1,7 @@
+#!/bin/bash
+
+gcc -c ../libfat/fatchain.c
+gcc -c ../libfat/cache.c
+gcc -c ../libfat/open.c
+gcc -c ../libfat/searchdir.c
+make
