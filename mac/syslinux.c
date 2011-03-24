@@ -53,14 +53,6 @@
 //#include "linuxioctl.h"
 #include <sys/ioctl.h>
 
-#ifndef FAT_IOCTL_GET_ATTRIBUTES
-# define FAT_IOCTL_GET_ATTRIBUTES	_IOR('r', 0x10, __u32)
-#endif
-
-#ifndef FAT_IOCTL_SET_ATTRIBUTES
-# define FAT_IOCTL_SET_ATTRIBUTES	_IOW('r', 0x11, __u32)
-#endif
-
 #define __u32 uint32_t
 
 #include <paths.h>
@@ -492,7 +484,7 @@ int main(int argc, char *argv[])
 
     if ((fd = open(ldlinux_name, O_RDONLY)) >= 0) {
 	uint32_t zero_attr = 0;
-	ioctl(fd, FAT_IOCTL_SET_ATTRIBUTES, &zero_attr);
+	//ioctl(fd, FAT_IOCTL_SET_ATTRIBUTES, &zero_attr);
 	printf("checkpoint1.55bad\n");
 	close(fd);
     }
@@ -525,7 +517,7 @@ int main(int argc, char *argv[])
      */
     {
 	uint32_t attr = 0x07;	/* Hidden+System+Readonly */
-	ioctl(fd, FAT_IOCTL_SET_ATTRIBUTES, &attr);
+	//ioctl(fd, FAT_IOCTL_SET_ATTRIBUTES, &attr);
     }
     
     printf("checkpoint3\n");
@@ -536,6 +528,8 @@ int main(int argc, char *argv[])
     
     ldlinux_sectors += 2; /* 2 ADV sectors */
     
+    close(fd);
+    sync();
     /*
     sectors = calloc(ldlinux_sectors, sizeof *sectors);
     if (sectmap(fd, sectors, ldlinux_sectors)) {
