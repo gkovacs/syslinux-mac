@@ -273,8 +273,8 @@ int libfat_readfile(intptr_t pp, void *buf, size_t secsize,
     printf("Cannot read sector %u\n", sector);
     }
     // TODO
-    //return numread;
-    return secsize;
+    return numread;
+    //return secsize;
 }
 
 int main(int argc, char *argv[])
@@ -563,7 +563,7 @@ int main(int argc, char *argv[])
     s = libfat_clustertosector(fs, ldlinux_cluster);
     while (s && nsectors < ldlinux_sectors) {
 	*secp++ = s;
-	//nsectors++;
+	nsectors++;
 	s = libfat_nextsector(fs, s);
     }
     libfat_close(fs);
