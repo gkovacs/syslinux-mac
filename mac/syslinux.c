@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
     }
     char umountCommand[4096];
     memset(umountCommand, 0, 4096);
-    strcat(umountCommand, "diskutil umount ");
+    strcat(umountCommand, "hdiutil unmount ");
     strcat(umountCommand, opt.device);
     system(umountCommand);
     
@@ -292,15 +292,15 @@ int main(int argc, char *argv[])
 
     char mountCmd[4096];
     memset(mountCmd, 0, 4096);
-    strcat(mountCmd, "diskutil mount ");
+    strcat(mountCmd, "hdiutil mount ");
     strcat(mountCmd, opt.device);
     system(mountCmd);
     
     char mountGrepCmd[4096];
     memset(mountGrepCmd, 0, 4096);
-    strcat(mountGrepCmd, "mount | grep ");
+    strcat(mountGrepCmd, "echo `mount | grep ");
     strcat(mountGrepCmd, opt.device);
-    strcat(mountGrepCmd, " | tr ' ' '\n' | head -n 3 | tail -n 1");
+    strcat(mountGrepCmd, " | sed 's/ on /$/' | tr '$' '\n' | head -n 2 | tail -n 1 | tr '(' '\n' | head -n 1`");
     char mountPoint[4096];
     memset(mountPoint, 0, 4096);
     FILE *mountCmdOutput = popen(mountGrepCmd, "r");
